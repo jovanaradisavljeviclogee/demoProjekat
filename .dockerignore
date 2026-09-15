@@ -1,0 +1,95 @@
+# ==============================================================================
+# .dockerignore — kontrola build konteksta (FR-47)
+#
+# Ovaj fajl ima DVE uloge (design.md 5.4), i obe su podjednako važne:
+#
+# 1. TAČNOST CACHE-A
+#    Sve što ostane u kontekstu ulazi u hash koji Docker koristi za `COPY`.
+#    Bez ovog fajla lokalni `vendor/`, `node_modules/` i `storage/logs` menjaju
+#    taj hash pri svakoj lokalnoj promeni, pa se sloj sa `COPY` invalidira bez
+#    ijednog stvarnog razloga i cache puca (NFR-03, AC-11).
+#
+# 2. BEZBEDNOST
+#    Sprečava da `.env` sa stvarnim kredencijalima uđe u build kontekst i
+#    završi u sloju image-a. Naknadno brisanje ne pomaže — obrisan fajl i dalje
+#    postoji u ranijem sloju i vidi se u `docker image history` (FR-56, AC-13).
+#
+# Ono što build stvarno treba se NE isključuje: public/, database/, resources/,
+# config/, routes/, app/, bootstrap/, docker/, artisan, composer.json|lock,
+# package.json, package-lock.json, vite.config.js.
+# ==============================================================================
+
+# --- Tajne: nikada u build kontekst (FR-47, FR-56, C-02, AC-13) ---------------
+# Obrazac `.env.*` pokriva i .env.backup / .env.production / .env.local.
+# `.env.example` je namerno obuhvaćen: build ga ne koristi, kopira se na hostu.
+.env
+.env.*
+auth.json
+storage/*.key
+
+# --- Zavisnosti: proizvode ih build stage-ovi, ne uzimaju se sa hosta ---------
+# `vendor/` pravi stage `composer-deps`; `node_modules` postoji isključivo u
+# stage-u `frontend-assets` i nikada u runtime image-u (FR-41, FR-42, C-06).
+# Lokalne kopije bi bile i najveća i najnestabilnija stavka konteksta.
+vendor
+node_modules
+
+# --- Istorija verzionisanja ---------------------------------------------------
+# Tipično najveća pojedinačna stavka konteksta, a build je ne koristi ni za šta.
+.git
+
+# --- Izlaz lokalnog Vite build-a ----------------------------------------------
+# Stage `frontend-assets` proizvodi `public/build` iznova i runtime ga uzima
+# iz tog stage-a (FR-46). Lokalna kopija bi samo menjala hash konteksta.
+# Sam `public/` se NE isključuje — to je DocumentRoot (FR-22, FR-26).
+public/build
+public/hot
+public/storage
+
+# --- Laravel runtime artefakti sa hosta ---------------------------------------
+# Logovi i kompajlirani keš nastaju lokalnim radom i menjaju se stalno.
+# `bootstrap/cache` je posebno opasan: ustajao compiled config ugrađen u image
+# nadjačao bi runtime konfiguraciju iz `.env`.
+#
+# Isključuje se SADRŽAJ, ne i sami direktorijumi. Laravel te direktorijume drži
+# u repozitorijumu isključivo preko placeholder `.gitignore` fajlova, pa se oni
+# vraćaju u kontekst negacijom: bez njih bi direktorijumi zavisili od toga kako
+# build backend tretira prazne direktorijume, a `bootstrap/cache` mora postojati
+# pre nego što `composer` pokrene `artisan package:discover`.
+storage/logs/*
+!storage/logs/.gitignore
+storage/framework/cache/data/*
+!storage/framework/cache/data/.gitignore
+storage/framework/sessions/*
+!storage/framework/sessions/.gitignore
+storage/framework/views/*
+!storage/framework/views/.gitignore
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+
+# --- IDE i alati na host mašini (FR-47) ---------------------------------------
+# Preslikano iz `.gitignore` projekta. `.idea/workspace.xml` se menja pri skoro
+# svakoj radnji u IDE-u — bez ovoga cache puca i kada kod nije ni dirnut.
+.idea
+.vscode
+.fleet
+.nova
+.zed
+.phpunit.result.cache
+.phpunit.cache
+.phpactor.json
+
+# --- Docker i dokumentacija: build ih ne koristi ------------------------------
+# `compose.yaml` i markdown dokumenti se menjaju često tokom rada na projektu;
+# van konteksta ne mogu invalidirati `COPY` sloj.
+Dockerfile
+.dockerignore
+compose.yaml
+README.md
+ai workflow/spec.md
+ai workflow/design.md
+ai workflow/tasks.md
+
+# --- OS artefakti -------------------------------------------------------------
+.DS_Store
+Thumbs.db
