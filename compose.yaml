@@ -1,0 +1,128 @@
+# compose.yaml — razvojno okruženje: web (Apache 2.4) → app (PHP 8.3 FPM) → db (MySQL 8.4).
+#
+# Nijedan kredencijal nije upisan u ovaj fajl (C-02) i nijedna IP adresa se ne koristi
+# za adresiranje servisa (C-03) — servisi se nalaze isključivo po Compose imenu (FR-05).
+# Vrednosti dolaze iz `.env`, koji se kreira kao `cp .env.example .env` (design.md 7).
+#
+# `${VAR:-vrednost}` se koristi ISKLJUČIVO za ne-tajne konstante fiksirane ugovorom
+# (tasks.md 4.4), da izostanak promenljive ne obori start. Nijedan kredencijal nema
+# podrazumevanu vrednost — to bi bila tiha rupa u C-02.
+
+services:
+  # --------------------------------------------------------------------- web
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "${WEB_HOST_PORT:-8080}:80"
+    volumes:
+      # Isti apsolutni put kao u `app`. Apache ne šalje kod, nego apsolutnu putanju
+      # u SCRIPT_FILENAME, a FPM je otvara sa SVOG fajlsistema — razilaženje putanja
+      # daje "File not found" na svaki PHP zahtev (design.md 3.1, rizik R-07).
+      - .:/var/www/html
+      # Vite izlaz ne postoji na hostu, a Apache ga servira direktno, bez FPM-a (FR-26).
+      - app-build:/var/www/html/public/build
+    networks:
+      - appnet
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      # Statička ruta koju Apache servira sam, bez dodirivanja PHP-a. Provera kroz `/`
+      # bi obarala `web` svaki put kad aplikacija ima grešku ili je baza spora, iako je
+      # web server ispravan — healthcheck meri SVOJ servis (ADR-09).
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # --------------------------------------------------------------------- app
+  app:
+    build:
+      context: .
+      target: runtime
+      args:
+        # Non-root korisnik u kontejneru mora imati isti uid kao vlasnik fajlova na
+        # hostu, inače ili `storage/` nije zapisiv ili fajlovi na hostu postanu
+        # root-vlasništvo (design.md 10.2, rizik R-02).
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    env_file:
+      - .env
+    extra_hosts:
+      # Xdebug ne sluša, nego zove IDE na hostu (design.md 9.4). Na Linux/WSL2 ime
+      # hosta ne postoji bez ovog mapiranja; `host-gateway` je Docker literal koji
+      # Docker razrešava u runtime-u, pa nijedna IP adresa nije upisana (rizik R-03).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/var/www/html
+      # OVERLAY PREKO BIND MOUNT-A (ADR-04, FR-72). `vendor/` i `public/build` postoje
+      # samo u image-u — na hostu ih nema. Bind mount korena bi ih potpuno zaklonio i
+      # aplikacija bi pala na prvom `require`. Docker montira ugnežđene tačke po dubini,
+      # pa uži mount pobeđuje, a prazan volume se pri prvom kreiranju inicijalizuje
+      # sadržajem sa te putanje iz image-a.
+      # Zamka (R-04): inicijalizacija se dešava SAMO dok je volume prazan. Posle izmene
+      # `composer.json` volume zadržava stari sadržaj i mora se ukloniti.
+      - app-vendor:/var/www/html/vendor
+      - app-build:/var/www/html/public/build
+    networks:
+      - appnet
+    depends_on:
+      db:
+        # Ne `service_started`: MySQL prima konekcije osetno kasnije nego što proces
+        # postoji, pa bi prvi `migrate --seed` pao na odbijenu konekciju (rizik R-05).
+        condition: service_healthy
+    healthcheck:
+      # Stvarna FastCGI razmena, ne provera po PID-u: master proces može biti živ dok
+      # je ceo pool zaglavljen — tada ovaj poziv istekne, a PID provera bi prošla (ADR-09).
+      # `127.0.0.1` je loopback unutar sopstvenog kontejnera, ne adresiranje servisa (O-07).
+      test: ["CMD-SHELL", "SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Namerno bez `ports`: jedini put do PHP-a vodi kroz `web` (FR-03, design.md 10.4).
+
+  # --------------------------------------------------------------------- db
+  db:
+    image: mysql:8.4.11
+    environment:
+      # Samo četiri promenljive koje MySQL zaista koristi — baza nema razloga da vidi
+      # `APP_KEY` ili `SEED_USER_PASSWORD`. Vrednosti dolaze iz `.env` (FR-31, C-02).
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      # Host-side mapiranje za DB klijente (UC-08). Interni port ostaje 3306 i to je
+      # ono što `DB_PORT` vidi iz `app` (FR-33).
+      - "${DB_HOST_PORT:-3307}:3306"
+    volumes:
+      # Imenovani volume, nikada bind mount: dozvole, performanse i semantika brisanja
+      # (`down -v` briše volume, ali ne bi obrisao host direktorijum) — C-05, ADR-06.
+      - db-data:/var/lib/mysql
+    networks:
+      - appnet
+    healthcheck:
+      # `--protocol=TCP` je namerno: tokom prve inicijalizacije MySQL diže privremeni
+      # server samo na socket-u, pa bi socket-ping prijavio "healthy" pre nego što
+      # server stvarno prima konekcije. TCP se u toj fazi ne prima (FR-32, rizik R-05).
+      # Bez kredencijala: `mysqladmin ping` vraća exit 0 i na "Access denied", jer to
+      # znači da server radi — tako lozinka ne završi u listi procesa kontejnera.
+      test: ["CMD", "mysqladmin", "ping", "--protocol=TCP", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      # Pokriva prvu inicijalizaciju baze; ne odlaže "healthy", samo ne broji rane
+      # neuspehe dok se data direktorijum kreira.
+      start_period: 60s
+
+volumes:
+  db-data:
+  app-vendor:
+  app-build:
+
+networks:
+  appnet:
