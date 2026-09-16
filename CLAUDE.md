@@ -31,13 +31,19 @@ Pravila iz tih skill-ova se **ne prepisuju ovde.** Ako nešto treba promeniti, m
 
 **[`docs/`](docs/)** drži svu AI dokumentaciju ovog projekta i **verzioniše se zajedno sa kodom**:
 
-| Fajl | Sadrži |
+| Putanja | Sadrži |
 |---|---|
 | [`docs/spec.md`](docs/spec.md) | zahtevi okruženja, acceptance criteria, granice |
-| [`docs/design.md`](docs/design.md) | arhitektura, ADR odluke, nefunkcionalni zahtevi, rizici |
+| [`docs/design.md`](docs/design.md) | arhitektura, ADR-01…09, nefunkcionalni zahtevi, rizici |
 | [`docs/tasks.md`](docs/tasks.md) | podela na taskove i talase |
+| [`docs/decisions/`](docs/decisions/) | odluke od **ADR-10** nadalje, jedna po fajlu |
+| [`docs/agent-outputs/`](docs/agent-outputs/) | izveštaji agenata, `YYYY-MM-DD-<agent>-<meta>.md` |
 
-Tu idu i decision notes i zabeleženi izlazi agenata.
+**Numeracija ADR-ova je jedna serija.** `design.md` drži ADR-01 do ADR-09, `docs/decisions/` nastavlja od ADR-10. Nikada ne počinji novu seriju — oznaka `ADR-04` se koristi i u komentarima u `compose.yaml` i mora ostati jednoznačna.
+
+**Odluka bez odbačene alternative nije odluka.** Sekcija *Opcije* je obavezna: za šest meseci neko će predložiti baš ono što je već razmatrano, a bez zapisa se rasprava vodi iznova.
+
+**Izveštaj agenta se čuva doslovno**, ne prepričan. Sažimanje uništava jedinu svrhu tog foldera — proveru unazad da li je agent bio u pravu. Sažetak ide u `LEARNINGS.md`; ovde stoji dokaz, ne zaključak. Svaki zapis nosi i sekciju *Provera tvrdnji*: izveštaj je tvrdnja dok se ne proveri.
 
 **[`LEARNINGS.md`](LEARNINGS.md)** — jedna datirana stavka po radnoj sesiji, najnovija na vrhu: šta je promenjeno, šta je pošlo naopako, i ispravka.
 
