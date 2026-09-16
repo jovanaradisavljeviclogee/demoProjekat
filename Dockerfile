@@ -44,6 +44,16 @@ COPY . .
 # Autoloader se dovršava tek sada, kada izvorni kod postoji (design.md 5.1, korak 4).
 # Optimizacija i preferred-install dolaze iz `config` sekcije composer.json-a i
 # ne ponavljaju se ovde.
+#
+# OČEKIVANA UPOZORENJA — NE ISPRAVLJATI IH.
+# Pošto je `optimize-autoloader: true` (composer.json:77), svaki dump je
+# optimizovan, pa ovaj korak UVEK ispiše dve linije oblika
+# `... does not comply with psr-4 autoloading standard ... Skipping.` za:
+#     ExamplePSR/BrokenNamespace.php   — namespace Domain\Wrong umesto Domain
+#     ExamplePSR/WrongFileName.php     — class MismatchedClass u fajlu drugog imena
+# Ta dva fajla su NAMERNO pokvarena i služe kao nastavni primer; objašnjenje je
+# u ExamplePSR/AUTOLOADING-BREAKS.md. Exit kod ostaje 0 i build prolazi ispravno.
+# "Čišćenje" ovih upozorenja uništava dve trećine primera.
 RUN composer dump-autoload
 
 # =============================================================================
