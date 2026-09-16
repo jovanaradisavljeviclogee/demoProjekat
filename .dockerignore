@@ -86,9 +86,10 @@ Dockerfile
 .dockerignore
 compose.yaml
 README.md
-docs/spec.md
-docs/design.md
-docs/tasks.md
+# Ceo folder, ne fajl po fajl: nabrajanje pojedinacnih dokumenata ne pokriva
+# poddirektorijume dodate kasnije (decisions/, agent-outputs/), a Dockerfile:42
+# je `COPY . .` — nepokriven dokument ulazi u build kontekst i u image.
+docs/
 
 # --- OS artefakti -------------------------------------------------------------
 .DS_Store

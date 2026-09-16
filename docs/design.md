@@ -494,6 +494,14 @@ Hostu su izloženi tačno dva porta: `8080` (web) i `3307` (baza, za razvojne al
 
 ---
 
+### Odluke posle ovog dokumenta
+
+Serija se nastavlja u [`docs/decisions/`](decisions/), od **ADR-10** nadalje — jedan fajl po odluci. Numeracija je zajednička sa ovom sekcijom, pa oznaka kao `ADR-04` ostaje jednoznačna bez obzira gde se pominje.
+
+Ovde stoje odluke donete tokom projektovanja okruženja; tamo one donete kasnije, tokom rada na projektu.
+
+---
+
 ## 12. Rizici i mitigacije
 
 | ID | Rizik | Uticaj | Mitigacija |

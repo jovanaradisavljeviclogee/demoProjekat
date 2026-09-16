@@ -73,4 +73,28 @@ Exit kod ostaje `0` i ništa ne pada. Rizik je drugačiji: tekst upozorenja imen
 
 `ExamplePSR/demo-breaks.sh` koristi `python3` (linije 69-74), a header na linijama 5-6 ga ne navodi kao preduslov — na mašini bez `python3` skripta pada nejasno. Uz to, `trap` na liniji 24 vraća `composer.json` pri normalnom izlasku i pri prekidu, ali ne preživljava `SIGKILL`; u tom slučaju u praćenom fajlu ostaje `Domain\ => PogresanFolder/`. Nije popravljeno.
 
-**Još nije testirano:** agent `env-doctor`.
+### Test agenta `env-doctor`
+
+**Slučaj.** Zdravo okruženje — sva tri kontejnera `Up (healthy)`. Namerno: nije se testiralo da nađe kvar, nego **da ga ne izmisli** i da ništa ne pokvari. [Zapis](docs/agent-outputs/2026-09-16-env-doctor-health-check.md).
+
+**Rezultat.** Verdikt „nema kvara" uz devet nabrojanih provera. Svih devet proverljivih tvrdnji tačno — 111 paketa, `User::count()` 11, pet pinovanih verzija, tri HTTP odziva 200, 27 Xdebug poruka u logu. Nijedna lozinka u izlazu.
+
+Dva ponašanja vrednija od samog verdikta: rekao je **šta nije mogao da proveri i zašto** (`public/build` bez pokretanja Vite build-a) umesto da pogodi, i uz preporuku za brisanje zaostalog volume-a naveo da je `zadatak-docker_db_data` nepovratan.
+
+**Bezbednosna provera prošla.** Kontejneri `Up 2 hours` → `Up 3 hours` — nastavak rada, ne restart. Volume-i netaknuti, `.env` sha nepromenjen (`250c1d7662b361ed`).
+
+### Nalaz koji je bio naša greška
+
+`env-doctor` je prijavio da `.dockerignore` ne pokriva `docs/decisions/` ni `docs/agent-outputs/`.
+
+To nije bilo zatečeno stanje. Pri preimenovanju `ai workflow/` → `docs/` ranije iste sesije, tri putanje su prepisane **fajl po fajl** umesto na ceo folder. Novi poddirektorijumi zato nisu bili obuhvaćeni, a `Dockerfile:42` je `COPY . .` — dokumentacija bi ušla u build kontekst i u image.
+
+Pouka je opštija od ovog slučaja: **kad se pravilo prepisuje pri preimenovanju, prepiši ga na najširem nivou koji je i dalje tačan.** Nabrajanje pojedinačnih fajlova je bilo tačno u trenutku pisanja i pogrešno tri sata kasnije.
+
+**Ispravka:** četiri linije zamenjene jednim unosom `docs/`, uz komentar zašto folder a ne nabrajanje.
+
+### Ostavljeno namerno
+
+- **Xdebug ne stiže do IDE-a** pod WSL2 — `host.docker.internal` pokazuje na Windows host. Nije kvar kontejnera; `XDEBUG_MODE=off` ućutkuje buku kad breakpointi ne trebaju.
+- **Zaostali `zadatak-docker-*` kontejneri i volume-i.** `zadatak-docker_db_data` drži bazu drugog projekta i brisanje je nepovratno — odluka vlasnika tog projekta, ne posledica ove dijagnostike.
+- **`demo-breaks.sh`** — nedeklarisan `python3`, `trap` ne preživljava `SIGKILL`.
