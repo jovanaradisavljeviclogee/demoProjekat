@@ -147,6 +147,22 @@ Generated optimized autoload files containing 6523 classes
 Poruka imenuje **fajl**, **stvarno deklarisanu klasu** i **prekršeno pravilo**. To je najbrži
 put do uzroka kod kvara 2 i 3.
 
+### Ta upozorenja nisu opciona u ovom repozitorijumu
+
+`composer.json` ima `"optimize-autoloader": true` (linija 77), pa je **svaki** dump optimizovan —
+ne samo onaj u kome se `-o` otkuca ručno. Posledica je da dve gornje linije izlaze iz:
+
+- svakog `composer install` u kontejneru,
+- svakog običnog `composer dump-autoload`,
+- svakog Docker build-a, na `Dockerfile:47`.
+
+Exit kod ostaje `0` i build prolazi, ali su to **dva trajna upozorenja u svakom build logu**.
+
+Zato su ona i zaštićena komentarom u `Dockerfile`-u i sekcijom 10 u `README.md`: tekst
+upozorenja imenuje fajl i pravilo, ali ne pokazuje nazad ovamo. Bez tog upozorenja, prvi ko
+bude čistio bučan log „popravio" bi `BrokenNamespace.php:23` i preimenovao `WrongFileName.php` —
+i time tiho uništio dve trećine ovog primera.
+
 Pošto Composer takve klase preskače, u classmap iz `ExamplePSR/` ulazi samo ispravna:
 
 ```php

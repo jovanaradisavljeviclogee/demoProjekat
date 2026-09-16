@@ -86,9 +86,9 @@ Dockerfile
 .dockerignore
 compose.yaml
 README.md
-ai workflow/spec.md
-ai workflow/design.md
-ai workflow/tasks.md
+docs/spec.md
+docs/design.md
+docs/tasks.md
 
 # --- OS artefakti -------------------------------------------------------------
 .DS_Store

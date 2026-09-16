@@ -255,7 +255,29 @@ Apache verzija nije u tagu image-a nego dolazi iz Debian repozitorijuma, pa su p
 
 ---
 
-## 10. Veličina image-a i najveći slojevi
+## 10. Dva očekivana upozorenja u build logu
+
+Svaki `docker compose up -d --build` ispiše dve linije ovog oblika:
+
+```
+Class Domain\Wrong\BrokenNamespace located in ./ExamplePSR/BrokenNamespace.php does not comply
+with psr-4 autoloading standard (rule: Domain\ => ./ExamplePSR). Skipping.
+
+Class Domain\MismatchedClass located in ./ExamplePSR/WrongFileName.php does not comply
+with psr-4 autoloading standard (rule: Domain\ => ./ExamplePSR). Skipping.
+```
+
+**To je ispravno ponašanje i ne treba ga popravljati.**
+
+`ExamplePSR/BrokenNamespace.php` i `ExamplePSR/WrongFileName.php` su namerno pokvareni — služe kao nastavni primer dva od tri načina da se pokvari PSR-4 autoloading. Objašnjenje i uhvaćene poruke su u [`ExamplePSR/AUTOLOADING-BREAKS.md`](ExamplePSR/AUTOLOADING-BREAKS.md).
+
+Zašto se vide uvek, a ne samo kad se `-o` otkuca namerno: `composer.json` ima `"optimize-autoloader": true`, pa je **svaki** dump optimizovan. Upozorenja izlaze iz `composer install`, iz običnog `composer dump-autoload`, i iz Docker build-a.
+
+Exit kod ostaje `0` i build prolazi. Ako uvedeš CI koji tretira upozorenja kao greške, ta dva izuzmi poimence — ne uklanjaj primere.
+
+---
+
+## 11. Veličina image-a i najveći slojevi
 
 Izmereno sa:
 
