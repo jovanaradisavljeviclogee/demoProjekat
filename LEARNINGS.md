@@ -4,7 +4,94 @@ Jedna datirana stavka po radnoj sesiji, najnovija na vrhu: šta je promenjeno, �
 
 ---
 
-## 2026-09-17
+## 2026-09-17 — administracija payment metoda (React SPA)
+
+### Promenjeno
+
+- Ekran `/admin/payment-methods` kao React single-page aplikacija: lista, forma za create/edit i modalni dijalog za brisanje. Dokumentacija u `docs/features/payment-methods/`, odluke kao ADR-16 do ADR-19.
+- Uveden `PaymentMethodRepositoryInterface` sa jedinom implementacijom `ArrayPaymentMethodRepository`, vezan u zasebnom `PaymentMethodServiceProvider`. Statički niz u kodu je jedini izvor; tiket izričito zabranjuje bazu i fajlove.
+- React, react-dom, react-router-dom i `@vitejs/plugin-react` dodati u `package.json`; ulaz Vite-a prebačen sa `resources/js/app.js` na `resources/js/app.jsx`.
+- `SESSION_DRIVER=cookie` dopisan u `.env` i `.env.example` (ADR-16).
+- `phpunit.xml` dopunjen `<server>` linijama — v. nalaz ispod; izmena važi za ceo projekat, ne samo za ovaj ekran.
+- `tests/Feature/PaymentMethodTest.php`: 19 testova nad kriterijumima iz `spec.md`.
+- `README.md` dobio sekciju 12 o `npm run dev` na hostu; `CLAUDE.md` dobio izuzetak od pravila „sve kroz `app` kontejner" (ADR-19).
+
+### Šta je pošlo naopako
+
+**Obrisao sam tabele čije migracije postoje na ovoj grani.** Zadatak je počeo na `feature/laravel_and_docker`, gde `database/migrations/` zaista nema payment tabele, a `app/Models/` ima samo `User`. Baza je pritom imala devet payment tabela i dvanaest redova u `migrations`. Zaključak je bio da su ostatak napuštenog pokušaja, i vlasnica ga je potvrdila istim opisom — „nemam migracije, to sam nešto pokušavala". Tabele su obrisane, a njihovi redovi uklonjeni iz `migrations`.
+
+Grana je zatim promenjena na `data_and_payment_page`, koja nosi commit `643822f` sa **svih devet migracija, osam modela i `data.md`**. Iste te tabele su tamo commitovan kod, ne ostatak. Provera je bila tačna za granu na kojoj je izvršena i pogrešna za granu na kojoj je posao trebalo da se radi — a to su bile dve različite grane.
+
+**Četiri ADR-a su dobila zauzete brojeve.** ADR-13, ADR-14 i ADR-15 su napisani u toku ove sesije, dok su ADR-13, ADR-14 i ADR-15 sa istim brojevima već postojali u commit-u `643822f`. `docs/decisions/` je nakratko imao tri para fajlova sa istim brojem i različitim sadržajem — tačno ono što `CLAUDE.md` zabranjuje rečenicom da oznaka mora ostati jednoznačna.
+
+**Masovna zamena je pogodila sopstveni rezultat.** Prebrojavanje je izvedeno kao lanac zamena `ADR-16→19, 15→18, 14→17, 13→16` nad istim fajlovima. Pošto se `ADR-13-staticki-niz-u-sesiji` zamenjuje u `ADR-16-staticki-niz-u-sesiji`, a pravilo `ADR-16→ADR-19` je u istom prolazu, tri linka su postala `ADR-19-staticki-niz-u-sesiji.md` — fajl koji ne postoji.
+
+**Ekran je „radio" četiri puta zaredom, a nijednom se nije video u pregledaču.** Rute su vraćale `200`, testovi su prolazili, `curl` je vraćao ispravan JSON i ispravan HTML. Stranica je svejedno bila bela. Četiri različita uzroka, jedan za drugim, i nijedan nije ostavio trag na serverskoj strani:
+
+| # | Poruka u konzoli | Uzrok |
+|---|---|---|
+| 1 | — | dva Vite servera: zaostao proces iz agentske sesije držao `5173`, novi tiho prešao na `5174` i tamo upisao `public/hot` |
+| 2 | `ERR_ADDRESS_INVALID` | pokretanje sa golim `--host` upisalo `http://[::]:5173` u `public/hot` — IPv6 wildcard je adresa **vezivanja**, ne adresa **pristupa**; pregledač je odbija pre nego što pošalje ijedan paket |
+| 3 | `blocked by CORS policy`, `ERR_FAILED 200` | stranicu servira Apache na `8080`, module Vite na `5173` — dva porekla. Vite 7 ima pooštrenu podrazumevanu CORS politiku i vraćao je `Allow-Origin: 5173` |
+| 4 | `can't detect preamble` | u Blade shell-u nedostajao `@viteReactRefresh` **pre** `@vite` |
+
+Prva tri su okruženje, četvrti je moj propust u kodu. I baš četvrti najbolje pokazuje zašto ništa od ovoga nije bilo uhvaćeno: `@viteReactRefresh` u produkcionom build-u ne ispisuje ništa, pa je `vite build` prolazio potpuno čist. Subagent koji je pisao frontend prijavio je „105 modules transformed, built in 1.32s" kao dokaz završenosti — i bio je u pravu za build, a ekran svejedno nije radio.
+
+Svaki sledeći kvar se video tek kad se prethodni ukloni. Vlasnica je morala četiri puta da prekopira konzolu da bi se stiglo do kraja.
+
+**Dva fajla su se razlikovala samo po veličini slova.** `resources/js/app.jsx` (montiranje) i `resources/js/App.jsx` (ruter) stajali su u istom folderu. Na Linuxu su to dva fajla; na Windows-u i macOS-u jedan. Vlasnica je prijavila da „`app.jsx` lokalno ne postoji" — zapravo ga je gledala kroz Windows, gde se ta dva imena sudaraju i vidi se samo jedno.
+
+To nije bio problem prikaza nego portabilnosti: klon ove grane na Windows ili Mac znači da jedan fajl pregazi drugi i `npm run build` pukne porukom koja ne imenuje uzrok. `git config core.ignorecase` je na ovoj mašini prazno, pa git nije upozoravao.
+
+**`SESSION_DRIVER=cookie` je tiho gubio svaki upis od šeste metode nadalje.** ADR-16 je prvo izabrao `cookie` driver da radna kopija ne dodirne ni bazu ni disk, a ograničenje kolačića od ~4 KB zabeležio kao rizik PM-R-02 sa `file` driverom kao izlazom. Rizik se ostvario odmah, na petoj metodi iz seed-a plus jednoj novoj.
+
+Način otkazivanja je bio najgori mogući: `POST` vraća `201` sa novododeljenim `id`-jem, klijent prikaže poruku o uspehu, a lista ostane nepromenjena. Nema greške, nema izuzetka, nema zapisa u logu — kolačić se prosto odbaci. Mereno nizom uzastopnih kreiranja: zahtevi za metode 7 do 13 svi su vratili `201`, a lista je ostala na šest. Od te tačke bi i `codeExists` počeo da propušta duplikate, jer više ne vidi zapise koji „postoje".
+
+Nalaz nije došao od mene nego od subagenta koji je pisao HTTP sloj, kao prijava izvan njegovog vlasništva.
+
+**Prekidač je na prazno telo gasio metodu.** `PATCH .../active` nije imao Form Request, pa je `$request->boolean('active')` čitao izostanak polja i svaku neprepoznatu vrednost kao `false`. Prazan zahtev je isključivao metodu i vraćao `200`. Isto je važilo za `PUT` bez polja `active`. Deaktivacija je time postajala sporedni efekat pokvarenog zahteva — a PM-FR-69 traži da gašenje bude zasebna, namerna radnja.
+
+**`nextId()` je reciklirao `id` obrisane metode.** `max(id) + 1` posle brisanja poslednje metode dodeljuje upravo njen broj, pa otvorena kartica sa linkom `/admin/payment-methods/{id}/edit` neprimetno počinje da menja drugu metodu.
+
+**Početna stranica je ostala da traži obrisani fajl.** `resources/views/welcome.blade.php:15` je i dalje imao `@vite([... 'resources/js/app.js'])` pošto je ulaz Vite-a prebačen na `app.jsx`. Sa pokrenutim dev serverom stranica se i dalje otvarala, pa se ništa nije primetilo; posle produkcionog build-a manifest nema taj ključ i `GET /` pada sa `ViteManifestNotFoundException`. Kvar je bio nevidljiv tačno u režimu u kom se radi.
+
+**Testovi se nisu izvršavali u `testing` okruženju — ni pre ovog tiketa.** Prvi pokušaj pokretanja dao je `419 CSRF token mismatch` na svakom `POST`, `PUT`, `PATCH` i `DELETE`. Uzrok nije bio u testu: `app()->environment()` je vraćalo `local`, pa `VerifyCsrfToken::runningUnitTests()` nije bio tačan, a `config('database.default')` je bilo `mysql` umesto `sqlite`.
+
+Lanac je specifičan za ovo okruženje. `compose.yaml` učitava `.env` kroz `env_file`, pa `APP_ENV`, `DB_CONNECTION` i ostale postaju **prave procesne promenljive** u `app` kontejneru i završe u `$_SERVER`. `phpdotenv` čita adaptere redom `$_SERVER` → `$_ENV` → `putenv`, a PHPUnit-ov `<env force="true">` postavlja `getenv` i `$_ENV`, ali **`$_SERVER` ne dira**. Prvi adapter je pobeđivao, i to tiho: nijedan test nije padao pre ovog tiketa jer nijedan postojeći test nije slao zahtev koji menja stanje niti dodirivao bazu.
+
+### Ispravka
+
+- `vite.config.js` dobio `host: '0.0.0.0'`, `strictPort: true`, `origin: 'http://localhost:5173'` i `cors.origin` vezan za `APP_URL` iz `.env` preko `loadEnv`. Zakucan `8080` bi tiho prestao da važi čim neko promeni `WEB_HOST_PORT`.
+- `@viteReactRefresh` dodat u `resources/views/admin/payment-methods.blade.php`, pre `@vite`.
+- `resources/js/app.jsx` preimenovan u `main.jsx`; korenska komponenta ostaje `App.jsx`. Provera da se sudar ne vrati: `ls resources/js | tr 'A-Z' 'a-z' | sort | uniq -d` mora biti prazno.
+- `README` sekcija 12 dobila tabelu „Ako je stranica prazna" — poruka iz konzole → uzrok → rešenje, za sva četiri slučaja — i napomenu da postojeći `.env` treba dopuniti sa `SESSION_DRIVER=file`.
+- `SESSION_DRIVER` prebačen na `file`; ADR-16 prepisan tako da `cookie` stoji kao **odbačena opcija sa izmerenim razlogom**, a ne kao izbor sa napomenom. Provereno posle izmene: trideset metoda u listi, nijedan izgubljen upis.
+- `active` je sada obavezna logička vrednost u sva tri Form Requesta; dodat `ToggleActiveRequest`. Prazan ili besmislen prekidački zahtev vraća `422` umesto da ugasi metodu.
+- Brojač `id`-jeva je monoton i čuva se u sesiji odvojeno od niza, pa brisanje ne oslobađa identitet.
+- `welcome.blade.php` više ne traži JS ulaz — ta stranica nema React da montira, pa joj je ostao samo CSS.
+- `phpunit.xml` je dobio `<server ... force="true"/>` linije uz postojeće `<env>`, za `APP_ENV`, `DB_CONNECTION`, `DB_DATABASE`, `SESSION_DRIVER`, `CACHE_STORE`, `QUEUE_CONNECTION` i `MAIL_MAILER`. Provereno: `env=testing`, `db=sqlite`. Suita je posle toga 22 testa, 68 tvrdnji, sve prolazi.
+- `php artisan migrate --force` vratio je svih devet tabela. Stanje je provereno brojanjem: `users` 11 redova i `connections` 1 red, isto kao pre brisanja. Jedina razlika je da su tabele prazne kao i pre — sve osim `connections` su i ranije imale nula redova.
+- ADR-ovi ove sesije prebrojani su na **ADR-16 do ADR-19**; serija `docs/decisions/` sada ide od ADR-10 do ADR-19 bez dvojnika i bez preskoka.
+- Svaki link ka ADR fajlu proveren je postojanjem fajla, ne pogledom — četiri od četiri se razrešavaju.
+
+**Najvažnija pouka ove sesije: za frontend „ruta vraća 200" nije dokaz da ekran radi.** Sve serverske provere — status kod, JSON, HTML, `artisan test` — bile su zelene dok je korisnik gledao belu stranicu. Jedini instrument koji je pokazivao uzrok bila je konzola pregledača. Task koji isporučuje ekran nije završen dok taj ekran nije otvoren, a `vite build` koji prolazi ne zamenjuje to, jer dev i produkcioni put imaju različite kvarove.
+
+**Peta pouka: imena fajlova koja se razlikuju samo po veličini slova su kvar, ne stil.** Razvojna mašina je Linux, ali repozitorijum se klonira i drugde.
+
+**Treća pouka: rizik zapisan u dokumentu nije rizik kojim se upravlja.** PM-R-02 je bio uredno opisan, sa tačnom granicom i tačnim izlazom, i svejedno je pušten u kod. Zapis je opisao šta će se desiti, ali ništa nije proverilo da li se desilo. Rizik čije je merenje jeftino — ovde je to bilo sedam uzastopnih `POST` zahteva — meri se pre nego što se zapiše kao prihvaćen.
+
+**Pouka: grana je deo premise, ne pozadina.** Pitanje „postoje li migracije za ove tabele" nema odgovor bez imena grane. Pre svake nepovratne radnje nad zajedničkim stanjem — a baza to jeste — proverava se `git branch --show-current`, ne samo radno stablo.
+
+**Druga pouka: pre dodele novog ADR broja, izlistaj `docs/decisions/`.** Sledeći slobodan broj se ne pamti iz ranijeg čitanja dokumentacije; on se očitava u trenutku pisanja, jer ga je neko drugi mogao zauzeti u međuvremenu.
+
+### Ostavljeno namerno
+
+- `app/Models/PaymentMethod.php` i pripadajuće migracije ostaju netaknuti. Ovaj tiket ih ne koristi — traži statički niz — pa Eloquent model i `ArrayPaymentMethodRepository` postoje uporedo, a ekran ide kroz repozitorijum. Spajanje ta dva je posao tiketa koji uvodi bazu iza istog interfejsa.
+- Dve konvencije za dokumentaciju po tiketu: `docs/domenProblema/` i `docs/features/payment-methods/`. Obe su upisane u `CLAUDE.md` kako stoje; ujednačavanje nije rađeno da ne bi pomeralo tuđe putanje u istom PR-u.
+
+---
+
+## 2026-09-17 — domenski model
 
 ### Promenjeno
 
