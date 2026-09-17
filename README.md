@@ -307,3 +307,57 @@ Dva od tri najveća sloja dolaze iz zvaničnog baznog image-a. `PHPIZE_DEPS` ost
 `curl` je u `web` image-u zato što `debian:12.15-slim` nema nijedan HTTP klijent, a bez njega healthcheck servisa ne bi imao čime da proveri `/healthz`.
 
 Ni u jednom finalnom image-u nema Node-a, npm-a ni `node_modules` — frontend build živi isključivo u svom stage-u, a u runtime ulazi samo kompajlirani `public/build`.
+
+---
+
+## 12. Frontend u razvoju (React)
+
+Administracija payment metoda (`/admin/payment-methods`) je React single-page aplikacija. Izvor je u `resources/js/`, a build radi Vite.
+
+**Ovo je jedina komanda ovog projekta koja se pokreće na hostu, a ne kroz `app` kontejner.** Razlog je u [ADR-19](docs/decisions/ADR-19-vite-dev-server-na-hostu.md): runtime image namerno nema Node (sekcija 9), a `public/build` je imenovani volume koji se puni iz image-a samo dok je prazan (sekcija 8) — pa bi svaka izmena jedne komponente tražila pun rebuild i ručno brisanje volumena.
+
+```bash
+npm install     # jednom, posle klona ili izmene package.json
+npm run dev     # drži pokrenuto dok radiš na frontendu
+```
+
+Vite sluša na `5173` i upisuje `public/hot`. Koren projekta je bind-mount-ovan, pa `@vite` direktiva u Blade-u taj fajl vidi iz kontejnera i šalje browser na dev server umesto na `public/build`. Aplikacija se i dalje otvara na **http://localhost:8080**, ne na `5173`.
+
+Kad `npm run dev` nije pokrenut, servira se poslednji bundle iz `app-build` volumena.
+
+### Ako je stranica prazna
+
+Sve u nastavku daje **belu stranicu bez ijedne greške na serveru** — `curl` u svakom od ovih slučajeva vraća uredan `200`, pa se uzrok vidi isključivo u DevTools konzoli pregledača. Zato je konzola prva stvar koju treba pogledati, ne server log.
+
+| Poruka u konzoli | Uzrok | Rešenje |
+|---|---|---|
+| `ERR_ADDRESS_INVALID` | `public/hot` sadrži `http://[::]:5173` — IPv6 wildcard, adresa vezivanja umesto adrese pristupa | `server.origin` u `vite.config.js`; ne pokretati sa golim `--host` |
+| `blocked by CORS policy` uz `ERR_FAILED 200` | stranicu servira Apache na `8080`, module Vite na `5173` — dva porekla; Vite 7 ima pooštrenu podrazumevanu politiku | `server.cors.origin` u `vite.config.js`, vezan za `APP_URL` |
+| `can't detect preamble` | u Blade-u nedostaje `@viteReactRefresh` **pre** `@vite` | dodati direktivu; u produkcionom build-u ona ne ispisuje ništa, zato `npm run build` prolazi čist i propust se vidi samo kroz dev server |
+| stranica prazna, port nije `5173` | već pokrenut Vite drži port, novi tiho prelazi na `5174` i tamo upisuje `public/hot` | `strictPort: true` u `vite.config.js`; `pkill -f "node.*vite"` pa ponovo `npm run dev` |
+
+Provera da je dev server ispravno postavljen:
+
+```bash
+cat public/hot          # mora biti http://localhost:5173, ne [::] i ne 127.0.0.1
+```
+
+**Sve ovo važi samo za dev server.** Produkcioni bundle nema ni CORS ni preambulu, pa `npm run build` može proći čist nad kodom koji u razvoju ne radi — i obrnuto. Zbog toga oba puta moraju biti provereni.
+
+**Provera proizvodnog bundle-a** ide procedurom iz sekcije 8 — bez uklanjanja volumena novi bundle ne stiže do Apache-a, a build prolazi bez ijedne greške:
+
+```bash
+docker compose down
+docker volume rm dockertask_app-build
+docker compose up -d --build
+```
+
+### Postojeći `.env` treba dopuniti
+
+`.env` je gitignorisan, pa izmene iz ove grane stižu samo kroz `.env.example`. Ko već ima svoj `.env`, mora ručno dodati:
+
+```
+SESSION_DRIVER=file
+```
+
+Bez toga važi podrazumevana vrednost iz `config/session.php`, a to je `database` — aplikacija radi, ali radna kopija payment metoda odlazi u `sessions` tabelu umesto u sesijski fajl, protivno [ADR-16](docs/decisions/ADR-16-staticki-niz-u-sesiji.md). Ništa ne pukne, pa se propust ne primeti.

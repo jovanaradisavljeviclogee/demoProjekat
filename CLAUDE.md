@@ -36,6 +36,8 @@ Pravila iz tih skill-ova se **ne prepisuju ovde.** Ako nešto treba promeniti, m
 | [`docs/spec.md`](docs/spec.md) | zahtevi okruženja, acceptance criteria, granice |
 | [`docs/design.md`](docs/design.md) | arhitektura, ADR-01…09, nefunkcionalni zahtevi, rizici |
 | [`docs/tasks.md`](docs/tasks.md) | podela na taskove i talase |
+| [`docs/domenProblema/`](docs/domenProblema/) | spec, design i tasks domenskog modela (tabele, modeli, seeder-i) |
+| [`docs/features/`](docs/features/) | spec, design i tasks po funkcionalnosti — [`payment-methods/`](docs/features/payment-methods/) |
 | [`docs/decisions/`](docs/decisions/) | odluke od **ADR-10** nadalje, jedna po fajlu |
 | [`docs/agent-outputs/`](docs/agent-outputs/) | izveštaji agenata, `YYYY-MM-DD-<agent>-<meta>.md` |
 
@@ -47,7 +49,7 @@ Pravila iz tih skill-ova se **ne prepisuju ovde.** Ako nešto treba promeniti, m
 
 **[`LEARNINGS.md`](LEARNINGS.md)** — jedna datirana stavka po radnoj sesiji, najnovija na vrhu: šta je promenjeno, šta je pošlo naopako, i ispravka.
 
-`.dockerignore` i dalje izuzima `docs/*.md` — dokumentacija je u repozitorijumu, ali nema šta da traži u Docker build kontekstu.
+`.dockerignore` izuzima **ceo `docs/` folder**, ne fajl po fajl — dokumentacija je u repozitorijumu, ali nema šta da traži u Docker build kontekstu. Poddirektorijumi dodati kasnije (`decisions/`, `agent-outputs/`, `features/`) time su pokriveni bez ijedne izmene.
 
 ## Pravilo za pull request
 
@@ -66,3 +68,5 @@ docker compose exec app composer <komanda>
 ```
 
 Nikad na hostu, nikad u `web`. Razlog i standardni kvarovi su u skill-u `docker-env`.
+
+**Jedan izuzetak:** `npm run dev` i `npm install` idu **na hostu**. Runtime image namerno nema Node, a `public/build` je imenovani volume — v. [ADR-19](docs/decisions/ADR-19-vite-dev-server-na-hostu.md) i [README sekciju 12](README.md). Izuzetak važi samo za Vite dev server; `artisan` i `composer` i dalje idu kroz `app`.
