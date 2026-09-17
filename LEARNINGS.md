@@ -4,6 +4,41 @@ Jedna datirana stavka po radnoj sesiji, najnovija na vrhu: šta je promenjeno, �
 
 ---
 
+## 2026-09-17
+
+### Promenjeno
+
+- Domenski model iz `data.md` preveden u šemu: deset tabela, osam Eloquent modela, jedan repozitorijum i jedan korisnički seeder. Dokumentacija u `docs/domenProblema/` (`spec.md`, `design.md`, `tasks.md`), odluke kao ADR-13, ADR-14 i ADR-15.
+- `users` usklađen sa `data.md` izmenom **postojeće** migracije, ne novom `ALTER` migracijom (ADR-13). Uklonjeni `updated_at`, `email_verified_at` i `remember_token`.
+- Sejanje korisnika izmešteno iz `DatabaseSeeder` u nov `UserSeeder`; `DatabaseSeeder` je sada samo orkestrator.
+- Uveden `app/Repositories/` sa `ProviderAccountRepository` kao jedinom tačkom upita nad `provider_accounts` (ADR-14). Bez izmene `composer.json` — `App\Repositories` pada pod postojeći PSR-4 koren.
+
+### Šta je pošlo naopako
+
+**NFR je bio napisan tako da ne može da prođe.** N11 u `design.md` i poslednji pasus ADR-14 tražili su da „broj fajlova u `app/` koji **pominju** `ProviderAccount` ostane 1". Model i repozitorijum su neizbežno dva fajla — model mora da postoji da bi repozitorijum imao šta da vrati. `grep` provera bi pala na prvom PR-u koji uvodi baš tu strukturu, i to na PR-u koji pravilo poštuje. Nalaz je došao od subagenta koji je task izvršavao, ne od pisca dokumenta.
+
+**Uklanjanje kolone bi oborilo login.** Brisanje `remember_token` iz `users` ostavlja Laravel session guard da pri svakom „remember me" prijavljivanju izda `UPDATE` nad kolonom koje više nema — `SQLSTATE[42S22] Unknown column 'remember_token'`. `data.md` kolonu ne pominje, pa je zahtev bio ispravan; posledica po framework nije bila predviđena ni u `spec.md` ni u `design.md`.
+
+**Šema se ne može verifikovati po tasku.** Prvi plan je predviđao da svaki task pokrene svoju proveru nad bazom. Ne može: `payment_method_currency` ima strani ključ na `currencies`, `logs` na `users`, pa `migrate:fresh` pada dok god ijedan fajl iz talasa nedostaje — i to ne govori ništa o kvalitetu taska koji ga je pokrenuo.
+
+### Ispravka
+
+- N11 i ADR-14 prepisani na ono što je zaista merljivo: **upiti** u tačno jednom fajlu, ne pominjanja. Uz to je u ADR-14 razrešeno prividno protivrečje — u fazi 2 nestaje tabela, ne nužno i klasa, jer `findActive()` vraća `?ProviderAccount` i tip ostaje deo potpisa.
+- `User` dobio `protected $rememberTokenName = '';`. Time `getRememberToken()` i `setRememberToken()` postaju no-op, pa guard ne izdaje `UPDATE`. Provereno da otkazuje zatvoreno: `Recaller::valid()` odbija kolačić, `retrieveByToken()` se prekida na `null` tokenu — nema putanje za falsifikovan kolačić. Dodat i docblock upozorenje da `MustVerifyEmail` sada čita kolonu koje nema.
+- `tasks.md` §1.1 eksplicitno deli odgovornost: talasi 1 i 2 dokazuju **fajl** (`php -l`, `grep`, čitanje uz `data.md`), talas 3 dokazuje **bazu**. Acceptance criteria koji traže bazu zato stoje i pod T9. To nije duplo pokrivanje nego podela — task piše, integracija dokazuje.
+
+### Zabeleženo, nije promenjeno
+
+- **Ponovljen `db:seed` gomila factory korisnike.** Izmereno u T9: posle dva pokretanja tabela ima **21** korisnika, ne 11. `updateOrCreate` štiti anchor (`COUNT(*) = 1`), pa R25 i AC prolaze kako su napisani, ali `README` i AC-06 iz `docs/spec.md` govore o 11 korisnika. Uz to `fake()->unique()->safeEmail()` de-duplicira samo unutar jednog procesa i ne zna za redove koji su već u tabeli — sudar na `users.email` je moguć iako se u ovom izvršavanju nije desio.
+- **`Connection` krije `api_secret`, ali ne i `api_key`; `ProviderAccount` krije oba.** Asimetrija je namerna i prati `data.md`: tamo je samo `connections.api_secret` označen sa „nikad se ne vraća u browser". Za `provider_accounts` `data.md` ne propisuje `$hidden` uopšte, pa je krivanje oba ključa stroža odluka izvršioca — tuđe tajne, ne podaci prodavca. Nijedna ne krši izvor istine.
+- **`down()` u `0001_01_01_000000_create_users_table.php` je preokrenut** u obrnuti redosled od `up()` — `sessions`, `password_reset_tokens`, `users`. ADR-13 obećava da su `password_reset_tokens` i `sessions` netaknuti i to i dalje važi za njihove `Schema::create` blokove; promenjen je samo redosled `dropIfExists` poziva. Ponašajno je inertno, jer među te tri tabele nema stranog ključa. Zapisano ovde da se ne čita kao protivrečnost sa ADR-13.
+
+- `Connection` nema `$fillable`, pa `current()->update([...])` baca `MassAssignmentException`. UC2 u `design.md` opisuje ažuriranje jedinog reda, ali pozivalac (konfiguracioni ekran) je Non-goal ove iteracije. Dodavanje `$fillable` bi otvorilo mass-assignment putanju za `api_secret`, pa odluka čeka fazu u kojoj ekran zaista postoji.
+- `Connection::current()` koristi `first()` bez `ORDER BY`. Na nivou baze ništa ne prikiva `connections` na jedan red — nema ni unique indeksa ni check ograničenja. Dok invarijanta važi, ponašanje je tačno.
+- `settings.key` nasleđuje `utf8mb4_unicode_ci`, pa su i unique indeks i `where` neosetljivi na veličinu slova: `Setting::get('LOGO_URL')` nalazi red `logo_url`. `data.md` kolaciju ne propisuje.
+- `settings.value` je `nullable`. `data.md` ga vodi kao običan `varchar` bez oznake `required` — za razliku od `name` kolona drugde, koje `required` nose izričito — pa je odsustvo obaveznosti pročitano kao nullable.
+- `provider_accounts` nema indeks ni unique nad `(pspid, environment)`. `data.md` ih ne traži; unique bi usput učinio `first()` determinističkim, ali bi mogao da se sudari sa seeder-om koji još nije napisan.
+
 ## 2026-09-16
 
 ### Promenjeno
